@@ -43,6 +43,8 @@ const nf = (x, d = 1) => x == null || !isFinite(x) ? '–' : x.toLocaleString('s
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const ago = t => { if (!t) return '–'; const m = (Date.now() - t) / 60000; if (m < 60) return Math.round(m) + ' min sedan'; if (m < 1440) return Math.round(m / 60) + ' h sedan'; return Math.round(m / 1440) + ' d sedan'; };
 
+const LOADING = { text: 'Hämtar data…', color: '#3987e5', textColor: '#c3c2b7', maskColor: 'rgba(20,20,22,0.72)', fontSize: 13, spinnerRadius: 12, lineWidth: 3 };
+function chartsLoading(ids, on) { ids.forEach(id => { const c = chart(id); on ? c.showLoading('default', LOADING) : c.hideLoading(); }); }
 let loadingN = 0;
 function loading(on, text) {
   loadingN = Math.max(0, loadingN + (on ? 1 : -1));
@@ -189,13 +191,23 @@ $('#rainStep2').value = store.get('opt#rainStep2', '3600000');
 $('#rainStep2').addEventListener('change', e => { store.set('opt#rainStep2', e.target.value); renderRain(); });
 
 let renderSeq = 0;
+/** Klipp en serie till [a,b] så att delvisa intervall inte får med regn utanför perioden */
+function clip(s, a, b) { const i = A.lowerBound(s.t, a), j = A.lowerBound(s.t, b + 1); return { t: s.t.slice(i, j), v: s.v.slice(i, j) }; }
+/** Behåll zoomfönstret när samma period ritas om (t.ex. när en inställning ändras) */
+function keepZoom(c, from, to) {
+  const o = c.getOption && c.getOption();
+  const dz = o && o.dataZoom && o.dataZoom[0];
+  if (!dz || c._range !== from + '|' + to || dz.startValue == null) { c._range = from + '|' + to; return null; }
+  if (dz.start <= 0.01 && dz.end >= 99.99) return null;
+  return [dz.startValue, dz.endValue];
+}
 function render() { if (!S.from) return; if (S.view === 'analys') renderAnalys(); else renderRain(); }
 
 /* ================================================================
    ECharts-gemensamt
    ================================================================ */
 function chart(id) {
-  if (charts[id]) return charts[id];
+  if (charts[id]) { charts[id].resize(); return charts[id]; }
   const c = echarts.init(document.getElementById(id), null, { renderer: 'canvas' });
   charts[id] = c;
   c.getZr().on('dblclick', () => c.dispatchAction({ type: 'dataZoom', start: 0, end: 100 }));
@@ -216,7 +228,7 @@ const axisCommon = {
 };
 const timeAxisLabel = {
   color: C.muted, fontSize: 11, hideOverlap: true,
-  formatter: { year: '{yyyy}', month: '{MMM}', day: '{d}/{M}', hour: '{HH}:{mm}', minute: '{HH}:{mm}', second: '{HH}:{mm}:{ss}', millisecond: '{HH}:{mm}', none: '{d}/{M} {HH}:{mm}' },
+  formatter: { year: '{yyyy}', month: '{d}/{M}', day: '{d}/{M}', hour: '{HH}:{mm}', minute: '{HH}:{mm}', second: '{HH}:{mm}:{ss}', millisecond: '{HH}:{mm}', none: '{d}/{M} {HH}:{mm}' },
 };
 const tooltipBase = {
   trigger: 'axis', backgroundColor: 'rgba(28,28,31,.96)', borderColor: '#3a3a40', textStyle: { color: C.text, fontSize: 12 },
@@ -225,7 +237,8 @@ const tooltipBase = {
 function toolboxZoom(xIdx) {
   return {
     right: 8, top: 0, itemSize: 14, iconStyle: { borderColor: C.muted }, emphasis: { iconStyle: { borderColor: C.text } },
-    feature: { dataZoom: { xAxisIndex: xIdx, yAxisIndex: false, title: { zoom: 'Markera för att zooma', back: 'Tillbaka' } }, restore: { title: 'Återställ' } },
+    // filterMode 'none': linjer ritas även om inga mätpunkter råkar ligga inom det markerade fönstret
+    feature: { dataZoom: { xAxisIndex: xIdx, yAxisIndex: false, filterMode: 'none', title: { zoom: 'Markera för att zooma', back: 'Tillbaka' } }, restore: { title: 'Återställ' } },
   };
 }
 function legendHtml(items) {
@@ -244,12 +257,15 @@ async function renderAnalys() {
   const hFrom = Math.min(from, to - histDays * A.DAY);
   const rainStep = +$('#rainStep').value;
   loading(true, 'Hämtar nivå och regn…');
+  const AN = ['mainChart', 'scatterChart', 'profileChart'];
+  chartsLoading(AN, true);
   let lvRaw, rnRaw;
   try {
     [lvRaw, rnRaw] = await Promise.all([series(lvl.id, lvl.key, hFrom, to), series(g.id, 'RE', hFrom - 3 * A.DAY, to)]);
-  } catch (err) { loading(false); return toast('Kunde inte hämta data: ' + err.message); }
+  } catch (err) { loading(false); chartsLoading(AN, false); return toast('Kunde inte hämta data: ' + err.message); }
   loading(false);
   if (seq !== renderSeq) return;
+  chartsLoading(AN, false);
 
   // ---- beräkningar ----
   const lv = $('#despike').checked ? A.despike(lvRaw) : lvRaw;
@@ -265,7 +281,8 @@ async function renderAnalys() {
 
   // vy-serier
   const inView = (t) => t >= from && t <= to;
-  const rainV = A.binSum(rnRaw, from, to, rainStep);
+  const rnView = clip(rnRaw, from, to);
+  const rainV = A.binSum(rnView, from, to, rainStep);
   const rainPts = rainV.t.map((t, i) => [Math.min(t + rainStep / 2, to), rainV.v[i]]);
   const lvIdx0 = A.lowerBound(lv.t, from), lvIdx1 = A.lowerBound(lv.t, to + 1);
   const useRaw = to - from <= 21 * A.DAY;
@@ -283,8 +300,8 @@ async function renderAnalys() {
     if (d > 0) exc += d * 0.25; baseSum += b * 0.25; lvSum += v; lvN++; lvMax = Math.max(lvMax, v);
     if (d > maxD) { maxD = d; maxDT = t; }
   });
-  const rainTot = rainV.v.reduce((a, b) => a + b, 0);
-  const rainHView = A.binSum(rnRaw, from, to, A.HOUR);
+  const rainTot = rnView.v.reduce((a, b) => a + b, 0);
+  const rainHView = A.binSum(rnView, from, to, A.HOUR);
   const maxI = Math.max(0, ...rainHView.v);
   const withLevel = events.filter(e => e.hasLevel && e.rise != null);
   const reg = A.regression(withLevel.map(e => e.total), withLevel.map(e => e.rise));
@@ -310,6 +327,7 @@ async function renderAnalys() {
     { name: 'Regnpåverkan (nivå − torrväder)', color: C.delta },
   ]);
   const c = chart('mainChart');
+  const zoomKeep = keepZoom(c, from, to);
   const grids = [{ top: 30, height: '17%' }, { top: '27%', height: '40%' }, { top: '73%', height: '14%' }].map(g0 => ({ left: 58, right: 24, ...g0 }));
   const x = i => ({ type: 'time', gridIndex: i, min: from, max: to, ...axisCommon, splitLine: { show: false }, axisLabel: i === 2 ? timeAxisLabel : { show: false }, axisPointer: { label: { show: i === 2, formatter: p => fmtDT(p.value) } } });
   const y = (i, name, extra) => ({ type: 'value', gridIndex: i, name, nameLocation: 'end', nameGap: 8, nameTextStyle: { color: C.muted, fontSize: 11, align: 'left' }, splitNumber: 3, ...axisCommon, ...extra });
@@ -320,8 +338,8 @@ async function renderAnalys() {
     xAxis: [x(0), x(1), x(2)],
     yAxis: [y(0, `Regn mm/${stepName === 'timme' ? 'h' : stepName}`, { min: 0, minInterval: 0.2 }), y(1, 'Nivå mm', { scale: true }), y(2, 'Påverkan mm', { scale: true })],
     toolbox: toolboxZoom([0, 1, 2]),
-    dataZoom: [{ type: 'inside', xAxisIndex: [0, 1, 2], zoomOnMouseWheel: true, moveOnMouseMove: false, moveOnMouseWheel: false, filterMode: 'none' },
-      { type: 'slider', xAxisIndex: [0, 1, 2], bottom: 6, height: 22, borderColor: C.axis, backgroundColor: '#161618', fillerColor: 'rgba(57,135,229,0.15)', dataBackground: { lineStyle: { color: '#555' }, areaStyle: { color: '#333' } }, handleStyle: { color: '#555', borderColor: '#777' }, textStyle: { color: C.muted }, labelFormatter: v => fmtShort(v), filterMode: 'none' }],
+    dataZoom: [{ type: 'inside', xAxisIndex: [0, 1, 2], zoomOnMouseWheel: 'ctrl', moveOnMouseMove: false, moveOnMouseWheel: false, preventDefaultMouseMove: false, filterMode: 'none', minValueSpan: 30 * A.MIN },
+      { type: 'slider', xAxisIndex: [0, 1, 2], bottom: 6, height: 22, borderColor: C.axis, backgroundColor: '#161618', fillerColor: 'rgba(57,135,229,0.15)', dataBackground: { lineStyle: { color: '#555' }, areaStyle: { color: '#333' } }, handleStyle: { color: '#555', borderColor: '#777' }, textStyle: { color: C.muted }, labelFormatter: v => fmtShort(v), filterMode: 'none', minValueSpan: 30 * A.MIN }],
     tooltip: { ...tooltipBase, formatter: ps => tooltipMain(ps, stepName, { prof, rainV, rainStep, l15 }) },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     series: [
@@ -332,6 +350,7 @@ async function renderAnalys() {
     ],
   }, true);
   enableBrushZoom(c);
+  if (zoomKeep) c.dispatchAction({ type: 'dataZoom', startValue: zoomKeep[0], endValue: zoomKeep[1] });
 
   // ---- spridning: regnmängd vs nivåhöjning ----
   renderScatter(withLevel, reg, from, to);
@@ -364,9 +383,19 @@ function tooltipMain(ps, stepName, ctx) {
   return h;
 }
 
+async function zoomToEvent(e) {
+  const a = e.start - 6 * A.HOUR, b = Math.min(e.windowEnd, Date.now());
+  if (a < S.from || b > S.to) { // händelsen ligger utanför vald period – byt period först
+    S.from = a - A.DAY; S.to = Math.min(b + A.DAY, Date.now()); S.preset = null; store.set('preset', null);
+    $('#from').value = toInput(S.from); $('#to').value = toInput(S.to);
+    $$('#presets button').forEach(x => x.classList.remove('active'));
+    await renderAnalys();
+  }
+  zoomTo(a, b);
+}
 function zoomTo(a, b) {
   const c = charts.mainChart; if (!c) return;
-  c.dispatchAction({ type: 'dataZoom', startValue: a, endValue: b });
+  c.dispatchAction({ type: 'dataZoom', startValue: Math.max(a, S.from), endValue: Math.min(b, S.to) });
   $('#mainChart').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 $('#resetZoom').addEventListener('click', () => charts.mainChart && charts.mainChart.dispatchAction({ type: 'dataZoom', start: 0, end: 100 }));
@@ -390,7 +419,7 @@ function renderScatter(evs, reg, from, to) {
     ].filter(Boolean),
   }, true);
   c.off('click');
-  c.on('click', p => { if (p.data && p.data.ev) zoomTo(p.data.ev.start - 6 * A.HOUR, p.data.ev.windowEnd); });
+  c.on('click', p => { if (p.data && p.data.ev) zoomToEvent(p.data.ev); });
 }
 
 function renderProfile(prof, l15, from, to) {
@@ -443,7 +472,7 @@ function renderEvents() {
   t.querySelectorAll('th').forEach(th => th.addEventListener('click', () => { const k = th.dataset.k; S.sort.events = { k, asc: s.k === k ? !s.asc : false }; renderEvents(); }));
   t.querySelectorAll('tbody tr').forEach(tr => tr.addEventListener('click', () => {
     t.querySelectorAll('tr.sel').forEach(x => x.classList.remove('sel')); tr.classList.add('sel');
-    const e = evs[+tr.dataset.i]; zoomTo(e.start - 6 * A.HOUR, e.windowEnd);
+    zoomToEvent(evs[+tr.dataset.i]);
   }));
   S._evSorted = evs;
 }
@@ -476,18 +505,20 @@ async function renderRain(soft) {
   const key = `${fFrom}|${fTo}`;
   if (!soft || !rainCache || rainCache.key !== key) {
     loading(true, 'Hämtar regnmätare…');
+    chartsLoading(['rainChart'], true);
     try {
       const data = await Promise.all(S.gauges.map(g => series(g.id, 'RE', fFrom, fTo).catch(() => ({ t: [], v: [] }))));
       rainCache = { key, data };
-    } catch (err) { loading(false); return toast(err.message); }
+    } catch (err) { loading(false); chartsLoading(['rainChart'], false); return toast(err.message); }
     loading(false);
     if (seq !== renderSeq) return;
+    chartsLoading(['rainChart'], false);
   }
   const data = rainCache.data;
   const sumBetween = (s, a, b) => { let x = 0; for (let i = A.lowerBound(s.t, a); i < s.t.length && s.t[i] <= b; i++) x += s.v[i]; return x; };
   const rows = S.gauges.map((g, i) => {
     const s = data[i];
-    const h = A.binSum(s, from, to, A.HOUR);
+    const h = A.binSum(clip(s, from, to), from, to, A.HOUR);
     return {
       g, s,
       h1: sumBetween(s, now - A.HOUR, now), h24: sumBetween(s, now - A.DAY, now), d7: sumBetween(s, now - 7 * A.DAY, now), d30: sumBetween(s, now - 30 * A.DAY, now),
@@ -537,10 +568,13 @@ function renderMap(rows) {
     L.tileLayer(esri + 'World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, attribution: 'Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap' }).addTo(map);
     L.tileLayer(esri + 'World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16 }).addTo(map);
     mapLayer = L.layerGroup().addTo(map);
-    map.on('zoomend', () => S._gaugeRows && renderMap(S._gaugeRows));
+    map.on('zoomend', () => { if (!map._busy && S._gaugeRows) renderMap(S._gaugeRows); });
   }
-  mapLayer.clearLayers();
   const pts = rows.filter(r => r.g.lat && r.g.lon);
+  map._busy = true; // fitBounds kan trigga zoomend synkront – undvik dubbelritning
+  if (!map._fitted && pts.length) { map.fitBounds(L.latLngBounds(pts.map(r => [r.g.lat, r.g.lon])).pad(0.15), { animate: false }); map._fitted = true; }
+  map._busy = false;
+  mapLayer.clearLayers();
   const max = Math.max(1, ...pts.map(r => r.period));
   // placera etiketter så de inte krockar (höger, vänster, upp, ned)
   const placed = [];
@@ -553,8 +587,7 @@ function renderMap(rows) {
   };
   const hit = (a, c) => !(a[2] < c[0] || a[0] > c[2] || a[3] < c[1] || a[1] > c[3]);
   const dirs = {};
-  if (map._fitted || pts.length) {
-    if (!map._fitted && pts.length) { map.fitBounds(L.latLngBounds(pts.map(r => [r.g.lat, r.g.lon])).pad(0.15)); map._fitted = true; }
+  {
     pts.slice().sort((a, b) => b.g.lat - a.g.lat).forEach(r => {
       const p = map.latLngToContainerPoint([r.g.lat, r.g.lon]), rad = 7 + 16 * Math.sqrt(r.period / max), w = 8 * (r.g.name.length + 9);
       let best = 'right';
@@ -583,14 +616,16 @@ function renderRainChart(rows) {
   $('#rainChartTitle').textContent = step >= A.DAY ? 'Regn per dygn' : 'Regn per timme';
   $('#rainLegend').innerHTML = legendHtml(sel.map(r => ({ name: r.g.name, color: SERIES[S.gaugeColor[r.g.id]] })));
   const c = chart('rainChart');
+  const zoomKeep = keepZoom(c, from, to);
   if (!sel.length) { c.clear(); c.setOption({ title: { text: 'Välj regnmätare i tabellen eller kartan', left: 'center', top: 'middle', textStyle: { color: C.muted, fontSize: 13, fontWeight: 400 } } }, true); return; }
   const ser = [];
   sel.forEach(r => {
     const col = SERIES[S.gaugeColor[r.g.id]];
-    const b = A.binSum(r.s, from, to, step);
+    const cs = clip(r.s, from, to);
+    const b = A.binSum(cs, from, to, step);
     let cum = 0;
     ser.push({ name: r.g.name, type: 'line', xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, symbolSize: 6, data: b.t.map((t, i) => [Math.min(t + step / 2, to), b.v[i]]), lineStyle: { width: 1.7, color: col }, itemStyle: { color: col } });
-    const hb = A.binSum(r.s, from, to, A.HOUR);
+    const hb = A.binSum(cs, from, to, A.HOUR);
     ser.push({ name: r.g.name + ' ', type: 'line', xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, data: hb.t.map((t, i) => [t + A.HOUR, +(cum += hb.v[i]).toFixed(1)]), lineStyle: { width: 1.7, color: col }, itemStyle: { color: col } });
   });
   const x = i => ({ type: 'time', gridIndex: i, min: from, max: to, ...axisCommon, splitLine: { show: false }, axisLabel: i === 1 ? timeAxisLabel : { show: false }, axisPointer: { label: { show: i === 1, formatter: p => fmtDT(p.value) } } });
@@ -599,8 +634,8 @@ function renderRainChart(rows) {
     animation: false, grid: [{ left: 50, right: 24, top: 30, height: '44%' }, { left: 50, right: 24, top: '62%', height: '26%' }],
     xAxis: [x(0), x(1)], yAxis: [y(0, `Regn ${unit}`), y(1, 'Ackumulerat mm')],
     toolbox: toolboxZoom([0, 1]),
-    dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], moveOnMouseMove: false, filterMode: 'none' },
-      { type: 'slider', xAxisIndex: [0, 1], bottom: 6, height: 22, borderColor: C.axis, backgroundColor: '#161618', fillerColor: 'rgba(57,135,229,0.15)', textStyle: { color: C.muted }, labelFormatter: v => fmtShort(v), filterMode: 'none' }],
+    dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], zoomOnMouseWheel: 'ctrl', moveOnMouseMove: false, moveOnMouseWheel: false, preventDefaultMouseMove: false, filterMode: 'none', minValueSpan: 30 * A.MIN },
+      { type: 'slider', xAxisIndex: [0, 1], bottom: 6, height: 22, borderColor: C.axis, backgroundColor: '#161618', fillerColor: 'rgba(57,135,229,0.15)', textStyle: { color: C.muted }, labelFormatter: v => fmtShort(v), filterMode: 'none', minValueSpan: 30 * A.MIN }],
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     tooltip: { ...tooltipBase, formatter: ps => {
       if (!ps.length) return '';
@@ -617,13 +652,14 @@ function renderRainChart(rows) {
     series: ser,
   }, true);
   enableBrushZoom(c);
+  if (zoomKeep) c.dispatchAction({ type: 'dataZoom', startValue: zoomKeep[0], endValue: zoomKeep[1] });
 }
 $('#resetZoom2').addEventListener('click', () => charts.rainChart && charts.rainChart.dispatchAction({ type: 'dataZoom', start: 0, end: 100 }));
 
 function renderDaily(rows) {
   const from = S.from, to = S.to;
   const days = A.binSum({ t: [], v: [] }, from, to, A.DAY).t;
-  const mat = rows.map(r => A.binSum(r.s, from, to, A.DAY).v);
+  const mat = rows.map(r => A.binSum(clip(r.s, from, to), from, to, A.DAY).v);
   const max = Math.max(1, ...mat.flat());
   const t = $('#dailyTable');
   const cell = v => { const a = v > 0 ? 0.12 + 0.7 * Math.sqrt(v / max) : 0; return `<td class="${v > 0 ? 'c' : 'dim'}" style="${v > 0 ? `background:rgba(57,135,229,${a.toFixed(2)})` : ''}">${v > 0 ? nf(v, 1) : '·'}</td>`; };

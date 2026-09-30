@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage, shell, nativeTheme, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, shell, nativeTheme, Menu, session, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -37,14 +37,25 @@ async function authenticate(email, password) {
 }
 
 const cache = new Map(); // enkel cache för att slippa dubbelhämtning
-async function apiGet(p, { ttl = 60000 } = {}) {
+const inflight = new Map(); // samtidiga identiska anrop delar på ett svar
+let reauth = null;
+async function apiGet(p, opts = {}) {
   const hit = cache.get(p);
-  if (hit && Date.now() - hit.at < ttl) return hit.data;
+  if (hit && Date.now() - hit.at < (opts.ttl ?? 60000)) return hit.data;
+  if (inflight.has(p)) return inflight.get(p);
+  const pr = apiFetch(p).finally(() => inflight.delete(p));
+  inflight.set(p, pr);
+  return pr;
+}
+async function apiFetch(p) {
   const doFetch = () => fetch(API + p, { headers: { Authorization: 'Bearer ' + auth.token } });
   if (!auth.token) throw Object.assign(new Error('Inte inloggad'), { code: 401 });
   let r = await doFetch();
-  if (r.status === 401 && auth.email && auth.password) { // token gått ut – logga in igen tyst
-    await authenticate(auth.email, auth.password); saveAuth(); r = await doFetch();
+  if (r.status === 401 && auth.email && auth.password) { // token gått ut – logga in igen tyst (en gång, delat mellan anrop)
+    try {
+      reauth = reauth || authenticate(auth.email, auth.password).then(saveAuth).finally(() => setTimeout(() => (reauth = null), 5000));
+      await reauth; r = await doFetch();
+    } catch { auth.password = null; saveAuth(); }
   }
   if (r.status === 401) {
     const body = await r.text().catch(() => '');
@@ -116,6 +127,8 @@ function openPortal(url) {
 function createWindow() {
   let st = { width: 1480, height: 940 };
   try { st = { ...st, ...JSON.parse(fs.readFileSync(STATE_FILE(), 'utf8')) }; } catch {}
+  // fönstret får inte hamna utanför skärmen (t.ex. om en extra skärm kopplats bort)
+  if (st.x != null && !screen.getAllDisplays().some(d => { const a = d.workArea; return st.x < a.x + a.width - 100 && st.x + st.width > a.x + 100 && st.y >= a.y - 10 && st.y < a.y + a.height - 100; })) { delete st.x; delete st.y; }
   nativeTheme.themeSource = 'dark';
   win = new BrowserWindow({
     ...st, minWidth: 980, minHeight: 640, show: false,
@@ -150,7 +163,7 @@ ipcMain.handle('auth:login', async (_e, { email, password, remember }) => {
   return user;
 });
 ipcMain.handle('auth:portal', () => portalLogin());
-ipcMain.handle('auth:logout', () => { clearAuth(); cache.clear(); return true; });
+ipcMain.handle('auth:logout', async () => { clearAuth(); cache.clear(); await session.fromPartition('persist:portal').clearStorageData().catch(() => {}); return true; });
 ipcMain.handle('api:get', async (_e, p, opts) => {
   try { return { ok: true, data: MOCK ? await MOCK.get(p) : await apiGet(p, opts) }; }
   catch (err) { return { ok: false, error: err.message, code: err.code || 0 }; }
@@ -169,6 +182,7 @@ else {
   app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null); if (!MOCK) loadAuth(); createWindow();
+    if (process.env.SWAMP_E2E) require('./test/e2e.js')(win, app, process.env.SWAMP_E2E);
     if (process.env.SWAMP_SHOT) { // testläge: skärmdumpar av båda vyerna
       const out = process.env.SWAMP_SHOT;
       win.webContents.on('console-message', (_e, _l, m) => console.log('[renderer]', m));
