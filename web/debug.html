@@ -784,6 +784,7 @@ function chart(id) {
   const c = echarts.init(document.getElementById(id), null, { renderer: 'canvas' });
   charts[id] = c;
   c.getZr().on('dblclick', () => c.dispatchAction({ type: 'dataZoom', start: 0, end: 100 }));
+  c.getZr().on('globalout', () => c.dispatchAction({ type: 'hideTip' })); // inga kvarhängande tooltips
   return c;
 }
 window.addEventListener('resize', () => Object.values(charts).forEach(c => c.resize()));
@@ -1211,7 +1212,7 @@ function renderRainChart(rows) {
   const y = (i, name, extra) => ({ type: 'value', gridIndex: i, name, nameTextStyle: { color: C.muted, fontSize: 11, align: 'left' }, splitNumber: 3, min: 0, ...axisCommon, ...extra });
   c.setOption({
     animation: false, grid: [{ left: 50, right: 24, top: 30, height: '44%' }, { left: 50, right: 24, top: '62%', height: '26%' }],
-    xAxis: [x(0), x(1)], yAxis: [y(0, `Regn ${unit}`), y(1, 'Ackumulerat mm')],
+    xAxis: [x(0), x(1)], yAxis: [y(0, `Regn ${unit}`), y(1, 'Ackumulerat mm', { min: null, scale: true })],
     toolbox: toolboxZoom([0, 1]),
     dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], zoomOnMouseWheel: 'ctrl', moveOnMouseMove: false, moveOnMouseWheel: false, preventDefaultMouseMove: false, filterMode: 'weakFilter', minValueSpan: 30 * A.MIN },
       { type: 'slider', xAxisIndex: [0, 1], bottom: 6, height: 22, borderColor: C.axis, backgroundColor: '#161618', fillerColor: 'rgba(57,135,229,0.15)', textStyle: { color: C.muted }, labelFormatter: v => fmtShort(v), filterMode: 'weakFilter', minValueSpan: 30 * A.MIN }],
