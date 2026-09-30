@@ -1,0 +1,38 @@
+name: Bygg Windows-app
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npx electron-builder --win --x64 --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Swamp-Tillskott-windows
+          path: |
+            dist/*.exe
+      - name: Publicera release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Swamp Tillskott (bygge ${{ github.run_number }})
+          body: |
+            Ladda ner **Swamp-Tillskott-…-portable.exe** (ingen installation) eller **Setup** (installerar med Start-meny-genväg).
+            Windows SmartScreen: klicka *Mer information* → *Kör ändå* (appen är inte kodsignerad).
+          files: |
+            dist/*.exe

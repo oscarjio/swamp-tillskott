@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://server.arcgisonline.com; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>Swamp Tillskott</title>
+  <link rel="stylesheet" href="vendor/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Titelrad -->
+  <header class="titlebar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" class="logo" aria-hidden="true"><path d="M12 2.5c-3.6 4.6-6.5 8.3-6.5 11.5a6.5 6.5 0 0 0 13 0c0-3.2-2.9-6.9-6.5-11.5z" fill="currentColor"/><path d="M8.5 14.5c.4 1.9 1.7 3 3.5 3.2" stroke="#141416" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+      <span>Swamp <b>Tillskott</b></span>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button data-view="analys" class="active">Regn &amp; nivå</button>
+      <button data-view="regn">Regnmätare</button>
+    </nav>
+    <div class="range" id="rangeBar">
+      <div class="seg" id="presets">
+        <button data-d="1">24 h</button><button data-d="3">3 d</button><button data-d="7" class="active">7 d</button><button data-d="14">14 d</button><button data-d="30">30 d</button><button data-d="90">90 d</button>
+      </div>
+      <input type="datetime-local" id="from" title="Från">
+      <span class="dash">–</span>
+      <input type="datetime-local" id="to" title="Till">
+      <button class="icon" id="refresh" title="Uppdatera (F5)"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <div class="menu-wrap">
+        <button class="icon" id="userBtn" title="Konto"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <div class="menu" id="userMenu" hidden>
+          <div class="menu-head" id="userName"></div>
+          <button id="openPortal">Öppna originalportalen</button>
+          <button id="logout">Logga ut</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Inloggning -->
+  <section id="login" class="login" hidden>
+    <form class="login-card" id="loginForm">
+      <svg viewBox="0 0 24 24" class="logo big" aria-hidden="true"><path d="M12 2.5c-3.6 4.6-6.5 8.3-6.5 11.5a6.5 6.5 0 0 0 13 0c0-3.2-2.9-6.9-6.5-11.5z" fill="currentColor"/></svg>
+      <h1>Logga in</h1>
+      <p class="muted">Samma konto som på portal.swamp.se</p>
+      <label>E-post<input type="email" id="email" autocomplete="username" required></label>
+      <label>Lösenord<input type="password" id="password" autocomplete="current-password" required></label>
+      <label class="check"><input type="checkbox" id="remember" checked> Kom ihåg mig (krypterat på den här datorn)</label>
+      <div class="err" id="loginErr"></div>
+      <button type="submit" class="primary" id="loginBtn">Logga in</button>
+      <div class="or"><span>eller</span></div>
+      <button type="button" id="portalLoginBtn">Logga in via portalen (SSO)</button>
+    </form>
+  </section>
+
+  <main id="app" hidden>
+    <!-- ======= Regn & nivå ======= -->
+    <section class="view" id="view-analys">
+      <div class="toolbar">
+        <label>Nivåmätare <select id="levelSel"></select></label>
+        <label>Regnmätare <select id="rainSel"></select></label>
+        <label>Regn per <select id="rainStep"><option value="3600000" selected>timme</option><option value="1800000">30 min</option><option value="600000">10 min</option><option value="86400000">dygn</option></select></label>
+        <label class="tog"><input type="checkbox" id="despike" checked> Filtrera spikar</label>
+        <details class="adv">
+          <summary>Beräkning</summary>
+          <div class="adv-body">
+            <label>Torrväder = inget regn senaste <input type="number" id="dryHours" value="48" min="6" max="240" step="6"> h</label>
+            <label>Ny regnhändelse efter uppehåll &gt; <input type="number" id="gapHours" value="6" min="1" max="48"> h</label>
+            <label>Min regn per händelse <input type="number" id="minMm" value="1" min="0.2" step="0.2"> mm</label>
+            <label>Svarsfönster efter regn <input type="number" id="respHours" value="24" min="3" max="120"> h</label>
+            <label>Historik för torrvädersprofil <input type="number" id="histDays" value="60" min="7" max="365"> dygn</label>
+          </div>
+        </details>
+        <span class="hint">Dra i diagrammet för att zooma · dubbelklick återställer</span>
+      </div>
+
+      <div class="kpis" id="kpis"></div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 id="mainTitle">Regn och nivå</h2>
+          <div class="legend" id="mainLegend"></div>
+          <button class="ghost small" id="resetZoom">Återställ zoom</button>
+        </div>
+        <div id="mainChart" class="chart tall"></div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <div class="card-head"><h2>Hur mycket stiger nivån per mm regn?</h2></div>
+          <p class="explain" id="scatterExplain"></p>
+          <div id="scatterChart" class="chart mid"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Torrvädersprofil (förväntad nivå utan regn)</h2></div>
+          <p class="explain" id="profileExplain"></p>
+          <div id="profileChart" class="chart mid"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Regnhändelser</h2>
+          <span class="muted small">Klicka på en rad för att zooma in</span>
+          <button class="ghost small" id="exportEvents">Exportera CSV</button>
+        </div>
+        <div class="table-wrap"><table id="eventsTable" class="tbl"></table></div>
+      </div>
+    </section>
+
+    <!-- ======= Regnmätare ======= -->
+    <section class="view" id="view-regn" hidden>
+      <div class="grid-map">
+        <div class="card map-card"><div id="map"></div></div>
+        <div class="card">
+          <div class="card-head"><h2>Regnmätare</h2><span class="muted small" id="gaugeInfo"></span><button class="ghost small" id="exportGauges">Exportera CSV</button></div>
+          <div class="table-wrap"><table id="gaugeTable" class="tbl"></table></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2 id="rainChartTitle">Regn per timme</h2>
+          <div class="legend" id="rainLegend"></div>
+          <label class="small">Visa per <select id="rainStep2"><option value="3600000" selected>timme</option><option value="86400000">dygn</option></select></label>
+          <button class="ghost small" id="resetZoom2">Återställ zoom</button>
+        </div>
+        <div id="rainChart" class="chart tall2"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Dygnsnederbörd (mm)</h2><button class="ghost small" id="exportDaily">Exportera CSV</button></div>
+        <div class="table-wrap"><table id="dailyTable" class="tbl heat"></table></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loadingText">Hämtar data…</span></div>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="vendor/echarts.min.js"></script>
+  <script src="vendor/leaflet.js"></script>
+  <script src="analysis.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

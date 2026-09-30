@@ -1,0 +1,62 @@
+{
+  "name": "swamp-tillskott",
+  "version": "1.0.0",
+  "description": "Regn vs nivå – analys av tillskottsvatten för Swamp / Sensor Online",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "test": "node test/synth.js"
+  },
+  "author": "Oscar Niklasson",
+  "license": "UNLICENSED",
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  },
+  "productName": "Swamp Tillskott",
+  "build": {
+    "appId": "se.swamp.tillskott",
+    "productName": "Swamp Tillskott",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "shortcutName": "Swamp Tillskott",
+      "artifactName": "Swamp-Tillskott-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Swamp-Tillskott-${version}-portable.${ext}"
+    },
+    "publish": null
+  }
+}
