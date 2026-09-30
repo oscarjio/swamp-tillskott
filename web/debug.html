@@ -573,7 +573,7 @@ select { background: var(--surface); border: 1px solid var(--border); border-rad
 'use strict';
 const A = Analysis;
 const $ = s => document.querySelector(s);
-const $ = s => [...document.querySelectorAll(s)];
+const $$ = s => [...document.querySelectorAll(s)];
 const api = window.swamp;
 
 /* ---------------- färger (validerad mörk palett) ---------------- */
@@ -668,14 +668,14 @@ function applyPreset(days) {
   S.preset = days; store.set('preset', days);
   S.to = Date.now(); S.from = S.to - days * A.DAY;
   $('#from').value = toInput(S.from); $('#to').value = toInput(S.to);
-  $('#presets button').forEach(b => b.classList.toggle('active', +b.dataset.d === days));
+  $$('#presets button').forEach(b => b.classList.toggle('active', +b.dataset.d === days));
 }
-$('#presets button').forEach(b => b.addEventListener('click', () => { applyPreset(+b.dataset.d); render(); }));
+$$('#presets button').forEach(b => b.addEventListener('click', () => { applyPreset(+b.dataset.d); render(); }));
 ['#from', '#to'].forEach(id => $(id).addEventListener('change', () => {
   const f = new Date($('#from').value).getTime(), t = new Date($('#to').value).getTime();
   if (!(f < t)) return toast('Från måste vara före till');
   S.from = f; S.to = t; S.preset = null; store.set('preset', null);
-  $('#presets button').forEach(b => b.classList.remove('active'));
+  $$('#presets button').forEach(b => b.classList.remove('active'));
   render();
 }));
 $('#refresh').addEventListener('click', () => refresh(true));
@@ -688,11 +688,11 @@ async function refresh(clear) {
 /* ---------------- flikar ---------------- */
 function setView(v) {
   S.view = v; store.set('view', v);
-  $('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.view === v));
+  $$('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.view === v));
   $('#view-analys').hidden = v !== 'analys'; $('#view-regn').hidden = v !== 'regn'; $('main').scrollTop = 0;
   render();
 }
-$('#tabs button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+$$('#tabs button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
 
 /* ---------------- start: hitta mätare ---------------- */
 async function boot() {
@@ -959,7 +959,7 @@ async function zoomToEvent(e) {
   if (a < S.from || b > S.to) { // händelsen ligger utanför vald period – byt period först
     S.from = a - A.DAY; S.to = Math.min(b + A.DAY, Date.now()); S.preset = null; store.set('preset', null);
     $('#from').value = toInput(S.from); $('#to').value = toInput(S.to);
-    $('#presets button').forEach(x => x.classList.remove('active'));
+    $$('#presets button').forEach(x => x.classList.remove('active'));
     await renderAnalys();
   }
   zoomTo(a, b);
