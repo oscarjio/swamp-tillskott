@@ -1,0 +1,12 @@
+{
+  "domain": "swamp_sensor_online",
+  "name": "Swamp Sensor Online",
+  "codeowners": ["@oscarjio"],
+  "config_flow": true,
+  "documentation": "https://github.com/oscarjio/swamp-tillskott",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/oscarjio/swamp-tillskott/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}

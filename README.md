@@ -32,3 +32,38 @@ npm run dist         # bygger Windows-installer + portable i dist/
 SWAMP_MOCK=1 npm start   # kör med syntetisk testdata utan inloggning
 ```
 Kortkommandon: F5 uppdatera, F12 utvecklarverktyg.
+
+## Home Assistant
+
+Integrationen `custom_components/swamp_sensor_online` hämtar regn och avloppsnivåer från Swamp till Home Assistant (var 5:e minut).
+
+**Installation via HACS**
+1. HACS → ⋮ → *Anpassade arkiv* → lägg till `https://github.com/oscarjio/swamp-tillskott`, typ **Integration**.
+2. Sök efter **Swamp Sensor Online** i HACS och ladda ner. Starta om Home Assistant.
+3. Inställningar → Enheter och tjänster → **Lägg till integration** → *Swamp Sensor Online*.
+4. Logga in med samma konto som på portal.swamp.se och välj mätare (Nödinge och båda mätpunkterna är förvalda).
+
+**Manuellt:** kopiera mappen `custom_components/swamp_sensor_online` till `/config/custom_components/` och starta om.
+
+**Sensorer**
+| Sensor | Enhet | Kommentar |
+|---|---|---|
+| `sensor.swamp_matpunkt_1_niva` m.fl. | mm | senaste nivå i avloppsledningen |
+| `sensor.swamp_nodinge_regn_senaste_timmen` | mm | summa senaste 60 min |
+| `sensor.swamp_nodinge_regn_idag` | mm | sedan midnatt (nollställs varje dygn, fungerar i Energi-/statistikvyer) |
+| `sensor.swamp_nodinge_regn_senaste_24_h` | mm | rullande 24 h |
+| `sensor.swamp_nodinge_senaste_regn` | tid | senaste tippning i regnmätaren |
+
+Fler regnmätare läggs till via *Konfigurera* på integrationen. Byter du lösenord i portalen ber HA dig logga in igen.
+
+Exempelkort (regn och nivå i samma vy):
+```yaml
+type: history-graph
+title: Regn vs nivå
+hours_to_show: 72
+entities:
+  - entity: sensor.swamp_nodinge_regn_senaste_timmen
+  - entity: sensor.swamp_matpunkt_1_niva
+  - entity: sensor.swamp_matpunkt_2_niva
+```
+(Entitets-id blir på svenska om HA körs på svenska, annars engelska – t.ex. `sensor.swamp_nodinge_rain_last_hour`.)

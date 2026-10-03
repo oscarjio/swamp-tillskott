@@ -1,0 +1,67 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sign in to Swamp",
+        "description": "Same account as portal.swamp.se.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
+      },
+      "select": {
+        "title": "Choose sensors",
+        "description": "Choose which rain gauges and level sensors to add.",
+        "data": {
+          "gauges": "Rain gauges",
+          "levels": "Level sensors"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in again",
+        "description": "The password no longer works. Enter the new one.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid email or password",
+      "cannot_connect": "Cannot reach api.swamp.se"
+    },
+    "abort": {
+      "already_configured": "Account already configured",
+      "reauth_successful": "Sign-in updated"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Choose sensors",
+        "data": {
+          "gauges": "Rain gauges",
+          "levels": "Level sensors"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "rain_1h": {
+        "name": "Rain last hour"
+      },
+      "rain_today": {
+        "name": "Rain today"
+      },
+      "rain_24h": {
+        "name": "Rain last 24 h"
+      },
+      "last_rain": {
+        "name": "Last rain"
+      },
+      "level": {
+        "name": "Level"
+      }
+    }
+  }
+}

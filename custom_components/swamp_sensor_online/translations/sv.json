@@ -1,0 +1,67 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Logga in på Swamp",
+        "description": "Samma konto som på portal.swamp.se.",
+        "data": {
+          "email": "E-post",
+          "password": "Lösenord"
+        }
+      },
+      "select": {
+        "title": "Välj mätare",
+        "description": "Välj vilka regnmätare och nivåmätare som ska bli sensorer.",
+        "data": {
+          "gauges": "Regnmätare",
+          "levels": "Nivåmätare"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Logga in igen",
+        "description": "Lösenordet fungerar inte längre. Ange det nya.",
+        "data": {
+          "password": "Lösenord"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Fel e-post eller lösenord",
+      "cannot_connect": "Kan inte nå api.swamp.se"
+    },
+    "abort": {
+      "already_configured": "Kontot är redan tillagt",
+      "reauth_successful": "Inloggningen är uppdaterad"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Välj mätare",
+        "data": {
+          "gauges": "Regnmätare",
+          "levels": "Nivåmätare"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "rain_1h": {
+        "name": "Regn senaste timmen"
+      },
+      "rain_today": {
+        "name": "Regn idag"
+      },
+      "rain_24h": {
+        "name": "Regn senaste 24 h"
+      },
+      "last_rain": {
+        "name": "Senaste regn"
+      },
+      "level": {
+        "name": "Nivå"
+      }
+    }
+  }
+}
